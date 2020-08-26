@@ -1,0 +1,34 @@
+Levels are constructed in layers, with the bottom layer first and top layer last,
+separated by three hyphens (---) and a newline. Each layer is a two-dimensional map, where each character
+represents a single block. The following key is the mapping of characters to blocks:
+
+# Stone
+. Grass
+^ Rock
+
+w Short Player, Up (North)
+s Short Player, Down
+a Short Player, Left
+d Short Player, Right
+
+| Tall Player, Up
+/ Tall Player, Down
+- Tall Player, Left
+_ Tall Player, Right
+
+i Stair, Up
+k Stair, Down
+j Stair, Left (Stair heads left)
+l Stair, Right
+
+v Vent
+
+b Box Unit
+o Ball
+
+m Mine
+t Turret (yet to be implemented)
+
+x Endpoint
+
+My apologies if this mapping is absolutely ridiculous.
