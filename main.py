@@ -1,694 +1,336 @@
-'''Initialization'''
-
-# Imports. I'm importing * because I'm too lazy to go through
-# and only import what I need.
-
-import random, time, os, copy
+import sys, os, random
+import runLevel
 from panda3d.core import *
-from panda3d.bullet import *
-from direct.directnotify.Notifier import Notifier
 
-#loadPrcFileData('Change Collision Filtering To Groups','bullet-filter-algorithm groups-mask')
 loadPrcFileData('Change Window Title','window-title Twobot')
-#loadPrcFileData('Disable Cache','model-cache-dir')
- 
+loadPrcFileData('Set Window Icon','icon-filename ui/icon.ico')
+
+props = WindowProperties( )
+props.setIconFilename( 'ui/icon.ico' )
+base.win.requestProperties( props )
+
 import direct.directbase.DirectStart
 
-from direct.particles.ParticleEffect import ParticleEffect
+from direct.gui.OnscreenText import OnscreenText
+from direct.gui.OnscreenImage import OnscreenImage
+from direct.gui.DirectGui import *
 
-# Disable warning messages
-n = Notifier('notifier')
-n.setWarning(bool=False)
+font = loader.loadFont('ui/Helpimtrappedinafont.ttf')
+font.setPixelsPerUnit(200)
+font.setPageSize(512,512)
+font.setNativeAntialias(True)
 
-# Turns debug mode on to make sure I'm not doing something weird.
-debugNode = BulletDebugNode('Debug')
-debugNode.showWireframe(True)
-debugNode.showConstraints(True)
-debugNode.showBoundingBoxes(False)
-debugNode.showNormals(False)
-debugNP = render.attachNewNode(debugNode)
-#debugNP.show()
+# Transitions
+from direct.showbase.Transitions import Transitions
+transition = Transitions(loader)
+
+# The three nodes, which contain the menus
+start = aspect2d.attachNewNode('start')
+select = aspect2d.attachNewNode('select')
+settings = aspect2d.attachNewNode('settings')
+
+# The node for the top bar menu in runlevel.
+topbar = aspect2d.attachNewNode('topbar')
 
 # A function to convert normal rgb into Panda rgb
 def rgb(r,g,b,a=1):
     return (r/255.0,g/255.0,b/255.0,a)
 
-# Get all available level names
-def getLevelNames():
-    return os.listdir('levels')
+def loadStart():
+    print('Loading start screen')
+    select.detachNode()
+    settings.detachNode()
+    start.reparentTo(aspect2d)
 
-availableLevels = getLevelNames()
-levelCtr = 0
+def loadSelect():
+    print('Loading level select')
+    start.detachNode()
+    select.reparentTo(aspect2d)
 
-# The sky
-base.setBackgroundColor(1,1,1)#rgb(211, 230, 235))
+def loadSettings():
+    start.detachNode()
+    settings.reparentTo(aspect2d)
 
-# Disable default mouse controls.
-base.disableMouse()
+def loadQuit():
+    print('Quitting Twobot')
+    sys.exit()
 
-# Enable particles
-base.enableParticles()
+# Creates title
+def largeText(text,y):
+    return OnscreenText(
+            text=text,
+            font=font,
+            scale=0.5,
+            fg=(1,1,1,1),
+            align=TextNode.ALeft,
+            pos=(-1.1,0,y)
+        )
 
-render.setAntialias(AntialiasAttrib.MAuto)
+# Simple text-only button
+def button(text,y,command,x=-1):
+    return DirectButton(
+        text=text,
+        text_font=font,
+        text_align=TextNode.ALeft,
+        pos=(x,0,y),
+        scale=0.2,
+        text_fg=(1,1,1,1),
+        frameColor=(1,1,1,0),
+        command=command,
+        clickSound=buttonSound
+    )
 
-# Camera Nodes
-headingNode = render.attachNewNode('headingNode')
-headingNode.setH(45)
-pitchNode = headingNode.attachNewNode('pitchNode')
-camera.reparentTo(pitchNode)
-camera.setPos(0,5,10)
-camera.lookAt(headingNode)
+# Toggle button
+def toggleToggleButton(state,obj,text,command):
+    obj['text'] = text+[': off',': on'][state]
+    command(state)
 
-# Center node for mouse orbit
-centerNode = render.attachNewNode('centerNode')
-centerNode.setPos(0,0,0)
+def toggleButton(text,command,y,x=-1,default=1):
+    c = DirectCheckButton(
+        text=text+[': off',': on'][default],
+        boxImage='ui/empty.jpg',
+        boxImageScale=0,
+        boxRelief=None,
+        text_font=font,
+        text_align=TextNode.ALeft,
+        pos=(x,0,y),
+        scale=0.2,
+        text_fg=(1,1,1,1),
+        frameColor=(1,1,1,0),
+        command=toggleToggleButton,
+        indicatorValue=default,
+        clickSound=buttonSound,
+        boxPlacement='right',
+        textMayChange=True
+    )
+    c['extraArgs'] = [c,text,command]
+    return c
 
-'''Physics'''
+# Level Button.
+def levelButton(filename,status,height):
+    # Generates a button with different backgrounds depending on status.
+    # Also starts the level when clicked.
+    number = int(filename.split('_')[0])
+    name = ' '.join(filename.split('_')[1:]).split('.')[0]
+    backgroundColor = [
+        rgb(100,255,100,0.5),
+        rgb(255,255,255,0.5),
+        rgb(0,0,0,0.5)
+    ][status] # 0 = completed, 1 = available, 2 = locked
+    return DirectButton(
+        text=name,
+        text_font=font,
+        #text_align=TextNode.ALeft,
+        pos=(0,0,height-number*0.3),
+        frameSize=(-5,5,0.7,-0.3),
+        frameColor=backgroundColor,
+        scale=0.2,
+        relief=6,
+        command=startLevel,
+        extraArgs=['levels/'+filename],
+        suppressMouse=False,
+        clickSound=buttonSound
+    )
 
-# Initialize the gravity vector
-gravityVector = Vec3(0,0,-9)
+# Image button (for the topbar)
+def imageButton(image,command,x,y=0.91):
+    b = DirectButton(
+        image=image,
+        image_scale=0.06,
+        pos=(x,0,y),
+        scale=1,
+        text_fg=(1,1,1,1),
+        frameColor=(1,1,1,0),
+        command=command,
+        clickSound=buttonSound,
+        sortOrder=100
+    )
+    b.setTransparency(1)
+    return b
 
-# Make the Bullet Physics World
-world = BulletWorld()
-world.setGravity(gravityVector)
-world.setDebugNode(debugNP.node())
-
-'''Lighting'''
-# Ambient
-alight = AmbientLight('alight')
-alight.setColor((0.2,0.2,0.2,1))
-np = render.attachNewNode(alight)
-render.setLight(np)
-
-'''mainLight = render.attachNewNode(Spotlight("Spot"))
-mainLight.node().setColor(rgb(255,200,100))
-mainLight.node().setScene(render)
-mainLight.node().setShadowCaster(True,4096,4096)
-#mainLight.node().showFrustum()
-mainLight.node().getLens().setFov(40)
-mainLight.setPos(0,0,40)
-mainLight.setHpr(-45,-90,0)
-mainLight.node().getLens().setNearFar(10, 100)
-render.setLight(mainLight)'''
-
-mainLight = render.attachNewNode(Spotlight("Spot"))
-mainLight.node().setColor(rgb(230,230,255))
-mainLight.node().setScene(render)
-mainLight.node().setShadowCaster(True,4096,4096)
-#mainLight.node().showFrustum()
-mainLight.node().getLens().setFov(40)
-mainLight.setPos(0,0,40)
-mainLight.setHpr(-45,-90,0)
-mainLight.node().getLens().setNearFar(10, 100)
-render.setLight(mainLight)
-
-# Enable the shader generator for the receiving nodes
-render.setShaderAuto()
-
-'''Models'''
-blockModel = loader.loadModel('models/block/block.dae')
-blockModel.setColorScale(rgb(39, 40, 34, 0.3))
-grassModel = loader.loadModel('models/block/grass2.dae')
-rockModel = loader.loadModel('models/rocks/rock.dae')
+# Creates a background image, obviously
+def backgroundImage(name):
+    iH=PNMImageHeader()
+    iH.readHeader(Filename(name))
+    yS=float(iH.getYSize())
+    np=OnscreenImage(name,parent=aspect2d)
+    np.setScale(Vec3(iH.getXSize(),1,yS)/base.win.getXSize())
+    return np
 
 '''Sounds'''
-soundtrack = base.loader.loadSfx('sfx/streamflow.ogg')
-soundtrack.set_loop(True)
-soundtrack.setVolume(0.2)
-soundtrack.play()
-print(soundtrack.getTime())
+buttonSound = base.loader.loadSfx('sfx/button3.wav')
+chimeSound = base.loader.loadSfx('sfx/chime.wav')
+chimeSound.setVolume(0.2)
 
-'''Classes'''
-# Static object
-class static():
-    def __init__(self,x,y,z,model):
-        # Coordinates, obviously
-        self.x = x
-        self.y = y
-        self.z = z
+soundtrack = False
+def playMusic(name):
+    global soundtrack
+    if soundtrack:
+        soundtrack.stop()
+    soundtrack = base.loader.loadSfx(name)
+    soundtrack.set_loop(True)
+    soundtrack.setVolume(0.2)
+    soundtrack.play()
+playMusic('sfx/relaxing.mp3')
 
-        # Setup physics
-        shape = BulletBoxShape(Vec3(0.5,0.5,0.5))
-        self.node = BulletRigidBodyNode('block')
-        self.node.addShape(shape)
-        self.nodePath = render.attachNewNode(self.node)
-        world.attachRigidBody(self.node)
+'''START'''
 
-        self.nodePath.setPos(self.x,self.y,self.z)
-        self.nodePath.setCollideMask(BitMask32.bit(0))
-        
-        # Set the model
-        self.model = model
-        self.model.setScale(0.5,0.5,0.5)
-        n = random.random()*0.3+0.7
-        self.nodePath.setColorScale(n)
-        self.model.instanceTo(self.nodePath)
-        self.model.setHpr(0,90,0)
+# Background Image
+image = backgroundImage('ui/startScreenDark.png')
+image.reparentTo(start)
 
-class block(static):
-    def __init__(self,x,y,z):
-        super().__init__(x,y,z,blockModel)
-        self.type = 'block'
+# Title
+title = largeText('twobot',1)
+title.reparentTo(start)
 
-class grass(static):
-    def __init__(self,x,y,z):
-        super().__init__(x,y,z,grassModel)
-        self.type = 'block'
+# Buttons
+startButton = button('start game>',-0.25,loadSelect)
+settingsButton = button('settings>',-0.40,loadSettings)
+endButton = button('quit>',-0.55,loadQuit)
 
-class rock(static):
-    def __init__(self,x,y,z):
-        super().__init__(x,y,z,rockModel)
-        self.type = 'rock'  
+startButton.reparentTo(start)
+settingsButton.reparentTo(start)
+endButton.reparentTo(start)
 
-class tree(static):
-    def __init__(self,x,y,z):
-        super().__init__(x,y,z,'models/tree3.dae')
-        self.type = 'tree'
-        self.model.setScale(0.4,0.5,0.4)
-        self.model.setPos(0.1,-0.1,0.25)
+'''RUNLEVEL'''
 
-class stair():
-    def __init__(self,x,y,z,h):
-        self.type = 'stair'
+# Grey DirectFrame that appears when paused. Used because the Transitions
+# class really doesn't want to cooperate with me for this one.
 
-        topStair = BulletBoxShape(Vec3(0.5,0.25,0.4))
-        bottomStair = BulletBoxShape(Vec3(0.5,0.5,0.20))
+pauseBlackOut = DirectFrame(
+    frameSize = (-300,300,-300,300),
+    frameColor = (0,0,0,0.6)
+)
+pauseBlackOut.detachNode()
 
-        self.node = BulletRigidBodyNode('stair')
-        self.node.addShape(topStair, TransformState.makePos(Point3(0, 0.25, -0.1)))
-        self.node.addShape(bottomStair, TransformState.makePos(Point3(0, 0, -0.30)))
-        self.nodePath = render.attachNewNode(self.node)
-        world.attach(self.node)
-
-        self.nodePath.setPos(x,y,z)
-        self.nodePath.setH(h)
-
-        self.model = loader.loadModel('models/stair.dae')
-        self.model.setHpr(-90,90,0)
-        self.model.setScale(0.5)
-        self.model.reparentTo(self.nodePath)
-
-#Ball
-class ball():
-    def __init__(self,x,y,z):
-        self.x = x
-        self.y = y
-        self.z = z
-
-        # Setup physics
-        shape = BulletSphereShape(0.5)
-        self.node = BulletRigidBodyNode('ball')
-        self.node.addShape(shape)
-        self.node.setMass(2.0)
-        self.nodePath = render.attachNewNode(self.node)
-        world.attachRigidBody(self.node)
-
-        self.nodePath.setPos(self.x,self.y,self.z)
-        self.nodePath.setCollideMask(BitMask32.bit(0))
-
-        # Enable shadows
-        ##self.nodePath.setLight(dynamicLight)
-        #self.nodePath.setShaderAuto()
-        
-        # Set the model
-        self.model = loader.loadModel('models/ball.dae')
-        self.model.setScale(0.5,0.5,0.5)
-        self.model.reparentTo(self.nodePath)
-        self.model.setHpr(0,90,0)
-        
-        self.type = 'ball'
-    
-    def reset(self):
-        self.nodePath.setPos((self.x,self.y,self.z))
-        self.nodePath.setHpr(0,0,0)
-        self.node.clearForces()
-        self.node.angular_velocity = Vec3(0,0,0)
-        self.node.linear_velocity = Vec3(0,0,0)
-        
-
-#Dynamic Object
-class box():
-    def __init__(self,positions):
-        self.type = 'box'
-
-        # Get the center of mass
-
-        self.x = sum([i[0] for i in positions])/len(positions)
-        self.y = sum([i[1] for i in positions])/len(positions)
-        self.z = sum([i[2] for i in positions])/len(positions)
-
-        # Setup physics
-        
-        self.node = BulletRigidBodyNode('box')
-        self.node.setMass(10.0)
-        self.nodePath = render.attachNewNode(self.node)
-        self.nodePath.setCollideMask(BitMask32.bit(0))
-        self.nodePath.setPos((self.x,self.y,self.z))
-
-        # Load the box model
-        blockModel = loader.loadModel('models/box.dae')
-        blockModel.setHpr(0,90,0)
-        blockModel.setScale(0.5,0.5,0.5)
-
-        # Enable shadows
-        ##self.nodePath.setLight(dynamicLight)
-        #self.nodePath.setShaderAuto()
-
-        shape = BulletBoxShape(Vec3(0.49,0.49,0.49))
-
-        # Now, go through all the positions and add physics shapes and models
-        #print('box positions: '+str(positions))
-        for unit in positions:
-            # Position the new shape relative to the center of mass
-            transform = TransformState.makePos(Point3(unit[0]-self.x,unit[1]-self.y,unit[2]-self.z))
-            # Add the shape to the node
-            self.node.addShape(shape,transform)
-            # Add the model to the nodePath
-            modelNode = self.nodePath.attachNewNode('modelNode')
-            modelNode.setPos(unit[0]-self.x,unit[1]-self.y,unit[2]-self.z)
-            blockModel.instanceTo(modelNode)
-        world.attachRigidBody(self.node)
-
-    def reset(self):
-        self.nodePath.setPos((self.x,self.y,self.z))
-        self.nodePath.setHpr(0,0,0)
-        self.node.clearForces()
-        self.node.angular_velocity = Vec3(0,0,0)
-        self.node.linear_velocity = Vec3(0,0,0)
-
-# Vents
-class vent():
-    def __init__(self,x,y,z):
-        self.type = 'vent'
-
-        # Physics - GhostNode
-        shape = BulletCylinderShape(0.1,3,ZUp)
-        self.node = BulletGhostNode()
-        self.node.addShape(shape)
-        world.attachGhost(self.node)
-        self.nodePath = render.attachNewNode(self.node)
-        self.nodePath.setCollideMask(BitMask32.bit(0))
-
-        self.nodePath.setPos(Vec3(x,y,z))
-        
-        # Base model
-        self.model = loader.loadModel('models/vent.dae')
-        self.model.setHpr(0,90,0)
-        self.model.setScale(0.5)
-        self.model.reparentTo(self.nodePath)
-
-        # Particle system
-        self.particles = ParticleEffect()
-        self.particles.loadConfig('models/vent2.ptf')
-        self.particles.start(parent=self.nodePath)
-
-# EndPlate
-
-deletedPlayers = []
-
-class endPlate():
-    def __init__(self,x,y,z):
-        self.type = 'endPlate'
-
-        # Physics - GhostNode
-        shape = BulletCylinderShape(0.1,0.5,ZUp)
-        self.node = BulletGhostNode()
-        self.node.addShape(shape)
-        world.attachGhost(self.node)
-
-        self.nodePath = render.attachNewNode(self.node)
-        self.nodePath.setPos(x,y,z)
-        
-        self.model = loader.loadModel('models/endPlate/endPlate.dae')
-        self.model.reparentTo(self.nodePath)
-        self.model.setHpr(0,90,0)
-        self.model.setScale(0.5)
-
-        # Particle system
-        self.particles = ParticleEffect()
-        self.particles.loadConfig('models/endPlate/endPlate.ptf')
-        self.particles.start(parent=self.nodePath)
-
-    def checkWin(self):
-        global deletedPlayers
-        overlaps = self.node.getOverlappingNodes()
-        allGood = True
-        for obj in level:
-            if obj.type == 'player':
-                if obj.node in overlaps and max(list(obj.nodePath.getPos()-self.nodePath.getPos())) <= 0.5:
-                    obj.delete()
-                    deletedPlayers.append(obj)
-                elif obj not in deletedPlayers:
-                    allGood = False
-        return allGood
-
-# Mines
-class mine():
-    def __init__(self,x,y,z):
-        self.type = 'mine'
-
-        # Physics - GhostNode
-        shape = BulletCylinderShape(1,1,ZUp)
-        self.ghostnode = BulletGhostNode()
-        self.ghostnode.addShape(shape)
-        self.node = BulletRigidBodyNode()
-        self.node.addShape(shape)
-        world.attach(self.ghostnode)
-        world.attach(self.node)
-        self.nodePath = render.attachNewNode(self.ghostnode)
-        #self.rigidNodePath = self.nodePath.attachNewNode(self.node)
-        self.nodePath.setCollideMask(BitMask32.bit(0))
-
-        self.nodePath.setPos(Vec3(x,y,z))
-        
-        # Base model
-        self.model = loader.loadModel('models/mine4.dae')
-        self.model.setHpr(0,90,0)
-        self.model.setScale(0.5)
-        self.model.reparentTo(self.nodePath)
-
-        self.frame = 0
-        self.explodeFrame = -1
-
-    def explode(self):
-        #global mainPlayer
-        #print(self.frame)
-        self.frame += 1
-        if self.explodeFrame > self.frame or self.explodeFrame == -1:
-            for node in self.ghostnode.getOverlappingNodes():
-                if node.name == 'player':
-                    #if abs(mainPlayer.nodePath.getX()-self.nodePath.getX()) < 2 and abs(mainPlayer.nodePath.getY()-self.nodePath.getY()) < 2:
-                    #self.explodeFrame = self.frame
-                    reset()
-        else:
-            self.model.detachNode()
-            #world.removeRigidBody(self.node)
-            #self.rigidNodePath.detachNode()
-            #print(self.explodeFrame,self.frame)
-
-    def reset(self):
-        self.frame = 0
-        print(self.explodeFrame)
-        self.model.reparentTo(self.nodePath)
-
-# Point-lights
-class light():
-    def __init__(self,x,y,z):
-        self.light = render.attachNewNode(PointLight('light'))
-        self.type = 'light'
-        self.light.setPos(x,y,z)
-        self.light.node().setColor(rgb(230,230,255,1))
-        render.setLight(self.light)
-    def delete(self):
-        render.clearLight(self.light)
-        self.light.detachNode()
-
-# The Freaking Player
-class player():
-    def __init__(self,x,y,z,h=0,short=True):
-        # Coordinates, obviously
-        self.x = x
-        self.y = y
-        if short:
-            self.z = z
-        else:
-            self.z = z+0.5
-        self.h = h
-
-        self.type = 'player'
-
-        # Setup physics
-
-        if short:
-            shape = BulletSphereShape(0.5)
-        else:
-            shape = BulletCapsuleShape(0.5,1,ZUp)
-
-        self.node = BulletRigidBodyNode('player')
-        self.node.addShape(shape)
-        self.node.setMass(3.0)
-        self.nodePath = render.attachNewNode(self.node)
-        world.attach(self.node)
-
-        # Position, duh
-        self.pos = Vec3(self.x,self.y,self.z)
-        self.nodePath.setPos(self.pos)
-        self.nodePath.setH(self.h)
-        
-        # Load the model
-        if short:
-            self.model = loader.loadModel('models/bots/levi.dae')
-        else:
-            self.model = loader.loadModel('models/bots/roller3.dae')
-            self.model.setZ(-0.5)
-
-        self.model.setHpr(0,90,0)
-        self.model.setScale(0.5,0.5,0.5)
-        self.model.reparentTo(self.nodePath)
-
-        ghostShape = BulletSphereShape(0.1)
-        self.ghostNode = BulletGhostNode()
-        self.ghostNode.addShape(ghostShape)
-        world.attach(self.ghostNode)
-        self.ghostNodePath = self.nodePath.attachNewNode(self.ghostNode)
-        self.ghostNodePath.setZ(-1)
-
-        self.camNode = render.attachNewNode('camNode')
-    
-    def setStatic(self):
-        # Set boxes to static when walking on them
-        for node in self.ghostNode.getOverlappingNodes():
-            if node.name in ['box','ball']:
-                node.setMass(0)
-
-    def reset(self):
-        self.nodePath.reparentTo(render)
-        self.model.reparentTo(self.nodePath)
-        self.nodePath.setPos(self.pos)
-        self.nodePath.setHpr(self.h,0,0)
-        world.attach(self.node)
-
-    def delete(self):
-        self.model.detachNode()
-        world.remove(self.node)
-        self.nodePath.detachNode()
-
-#TODO FIX THIS
-def buildBox(pos,pastPositions,splitLevelString):
-    if pos in pastPositions:
-        return False
-    pastPositions.append(pos)
-    boxPositions = []
-    for rz in [-1,0,1]:
-        if rz+pos[2] >= 0 and rz+pos[2] < len(splitLevelString):
-            for ry in [-1,0,1]:
-                if ry+pos[1] >= 0 and ry+pos[1] < len(splitLevelString[rz+pos[2]]):
-                    for rx in [-1,0,1]:
-                        if rx+pos[0] >= 0 and rx+pos[0] < len(splitLevelString[rz+pos[2]][ry+pos[1]]):
-                            if [rx,ry,rz] != [0,0,0]:
-                                if splitLevelString[rz+pos[2]][ry+pos[1]][rx+pos[0]] == 'b':
-                                    npos = [rx+pos[0],ry+pos[1],rz+pos[2]]
-                                    if not npos in pastPositions:
-                                        #print(pastPositions)
-                                        #print(npos,str(npos in pastPositions))
-                                        rec = buildBox(npos,pastPositions,splitLevelString)
-                                        boxPositions+=[i for i in rec]
-                                        #pastPositions=rec[1]
-    boxPositions.append(pos)
-    pastPositions+=boxPositions
-    #print(boxPositions)
-    return boxPositions
+def togglePause():
+    runLevel.pause = not(runLevel.pause)
+    if runLevel.pause:
+        pauseBlackOut.reparentTo(topbar)
+    else:
+        pauseBlackOut.detachNode()
 
 def reset():
-    global level, deletedPlayers
-    deletedPlayers = []
-    for i in level:
-        if i.type in ['player','box','mine','turret','ball']:
-            i.reset()
+    runLevel.reset()
+    pauseBlackOut.detachNode()
 
-def makeLevel(name):
-    level = []
-    with open(name,'r') as levelString:
-        splitLevelString = list(map(lambda i:i.split('\n'),levelString.read().split('---\n')))
-    totalZ = 0
-    totalY = 0
-    totalX = 0
-    totalBlocks = 0
-    pastPositions = []
-    for z in range(len(splitLevelString)):
-        for y in range(len(splitLevelString[z])):
-            for tx in range(len(splitLevelString[z][y])):
-                x = -tx
-                char = splitLevelString[z][y][tx]
+imageButton('ui/restart.png',reset,x=0).reparentTo(topbar)
+imageButton('ui/back.png',runLevel.endLevel,x=-0.25).reparentTo(topbar)
+imageButton('ui/pause.png',togglePause,x=0.25).reparentTo(topbar)
 
-                item = False
-
-                if char != ' ':
-
-                    totalZ += z
-                    totalY += y
-                    totalX += x
-                    totalBlocks += 1
-
-                    if   char == '#': item = block(x,y,z)
-                    elif char == '.': item = grass(x,y,z)
-                    elif char == '^': item = rock(x,y,z)
-                    
-                    elif char == 'w': item = player(x,y,z,h=0)
-                    elif char == 's': item = player(x,y,z,h=180)
-                    elif char == 'a': item = player(x,y,z,h=90)
-                    elif char == 'd': item = player(x,y,z,h=-90)
-                    
-                    elif char == '|': item = player(x,y,z,h=0,short=False)
-                    elif char == '/': item = player(x,y,z,h=180,short=False)
-                    elif char == '-': item = player(x,y,z,h=90,short=False)
-                    elif char == '_': item = player(x,y,z,h=-90,short=False)
-
-                    elif char == 'i': item = stair(x,y,z,h=0)
-                    elif char == 'k': item = stair(x,y,z,h=180)
-                    elif char == 'j': item = stair(x,y,z,h=-90)
-                    elif char == 'l': item = stair(x,y,z,h=90)
-
-                    elif char == 'v': item = vent(x,y,z)
-                    
-                    elif char == 'b':
-                        units = buildBox([tx,y,z],pastPositions,splitLevelString)
-                        if units:
-                            print(units)
-                            pastPositions += copy.deepcopy(units)
-                            for i in units:
-                                i[0] *= -1
-                            item = box(units)
-                    elif char == 'o': item = ball(x,y,z)
-                    
-                    elif char == 'm': item = mine(x,y,z)
-                    elif char == 't': print('Turret has not been implemented yet')
-
-                    elif char == '*': item = light(x,y,z)
-
-                    elif char == 'x': item = endPlate(x,y,z)
-
-                if item: level.append(item)
-
-    del pastPositions
-    headingNode.setPos((totalX/totalBlocks,totalY/totalBlocks,totalZ/totalBlocks))
-    camera.lookAt(headingNode)
-    return level
-
-def camControl():
-    k = base.mouseWatcherNode.isButtonDown
-    l = KeyboardButton
-    if k(l.up()):
-        pitchNode.setHpr(pitchNode,Vec3(0,3,0))
-    if k(l.down()):
-        pitchNode.setHpr(pitchNode,Vec3(0,-3,0))
-    if k(l.left()):
-        headingNode.setHpr(headingNode,Vec3(-3,0,0))
-    if k(l.right()):
-        headingNode.setHpr(headingNode,Vec3(3,0,0))
-    if k(KeyboardButton.asciiKey('n')): #Zoom out
-        camera.setPos(camera,Vec3(0,-0.5,0))
-    if k(KeyboardButton.asciiKey('m')): #Zoom in
-        camera.setPos(camera,Vec3(0,0.5,0))
-
-def isPressed(key):
-    return base.mouseWatcherNode.isButtonDown(KeyboardButton.asciiKey(key))
-
-def keyboardControl():
-    speed = Vec3(0, 0, 0)
-    omega = 0.0
-
-    v = 0.05
-
-    if isPressed('w'): speed.setY(-v)
-    if isPressed('s'): speed.setY( v)
-
-    for i in level:
-        if i.type == 'player':
-            #i.node.setLinearMovement(speed, True)
-            i.nodePath.setPos(i.nodePath,speed)
-            i.node.setAngularVelocity(Vec3(0,0,0))
-            i.nodePath.setP(0)
-            i.nodePath.setR(0)
-            zVel = i.node.getLinearVelocity()[2]
-            i.node.setLinearVelocity(Vec3(0,0,zVel))
-
-def turnPlayer(deg):
-    for j in level:
-        if j.type == 'player':
-            h = j.nodePath.getHpr()
-            i = j.nodePath.hprInterval(0.2,(h[0]+deg,h[1],h[2]))
-            i.start()
-
-base.accept('d',turnPlayer,[-90])
-base.accept('a',turnPlayer,[90])
-
-def applyVentForce():
-    global level
-    for i in level:
-        if i.type == 'vent':
-            for node in i.node.getOverlappingNodes():
-                if node.name == 'box' or node.name == 'ball' or node.name == 'player':
-                    parent = NodePath(node)
-                    zDist = (parent.getZ()-i.nodePath.getZ())*50
-                    print(zDist)
-                    node.applyCentralForce(Vec3(0,0,120-zDist))
-
-def setStatic():
-    for obj in level:
-        if obj.type in ['box','ball'] and obj.node.getMass() == 0:
-            obj.node.setMass(2)
-    for i in level:
-        if i.type == 'player' or i.type == 'ghost':
-            i.setStatic()
-
-def mineExplode():
-    for i in level:
-        if i.type == 'mine':
-            i.explode()
-
-def checkWin():
-    for i in level:
-        if i.type == 'endPlate':
-            if i.checkWin(): return True
-    return False
-
-def physics():
-    dt = globalClock.getDt()
-    world.doPhysics(dt, 10, 1.0/180.0)
-
-def run(task):
-    global level, levelCtr
-    camControl()
-    keyboardControl()
-    applyVentForce()
-    physics()
-    mineExplode()
-    setStatic()
-    if checkWin():
-        nextLevel()
+def detectWin(task):
+    # Detects when the "win" variable is True, plays a darken animation and calls cleanupLevel.
+    if runLevel.win:
+        print('Level complete')
+        transition.fadeOut(t=1)
+        chimeSound.play()
+        taskMgr.doMethodLater(1,cleanupLevel,'cleanupLevel')
+        return
+    if runLevel.end:
+        print('Level ended')
+        cleanupLevel()
+        return
     return task.cont
 
-def bakeShadows(task):
-    mainLight.node().setShadowCaster(False)
+def cleanupLevel(task=None):
+    # Clears the level and loads the select screen
+    # The unused "task" variable is because this function may be fired by taskMgr.
+    transition.noFade()
+    runLevel.clearLevel()
+    playMusic('sfx/relaxing.mp3')
+    topbar.detachNode()
+    loadSelect()
 
-def nextLevel():
-    global level, levelCtr
-    for i in level:
-        if i.type == 'light':
-            i.delete()
-        else:
-            world.remove(i.node)
-            i.nodePath.removeNode()
-    level = []
-    levelCtr += 1
-    level = makeLevel('levels\\'+availableLevels[levelCtr])
+def startLevel(name):
+    print('Starting level',name)
+    select.detachNode()
+    runLevel.level = runLevel.makeLevel(name)
+    runLevel.win = False
+    runLevel.end = False
+    runLevel.headingNode.setH(45)
+    runLevel.pitchNode.setP(50)
+    taskMgr.add(runLevel.run,'run')
+    taskMgr.add(detectWin,'detectWin')
+    topbar.reparentTo(aspect2d)
+    playMusic('sfx/slowmotion.mp3')
 
-level = makeLevel('levels\\'+availableLevels[levelCtr])
+#base.accept('r',reset)
+#base.accept('x',runLevel.endLevel)
 
-base.accept('r',reset)
-base.accept('c',nextLevel)
+'''SELECT'''
 
-taskMgr.add(run,'run')
-#taskMgr.add(bakeShadows,'bakeShadows')
-base.run()
+# Get all available level names
+levelFileNames = os.listdir('levels')
+
+# Background Image
+image = backgroundImage('ui/levelSelectScreen.png')
+image.reparentTo(select)
+
+# Back button
+backButton = button('<back',0.8,loadStart,x=-1.3)
+backButton.reparentTo(select)
+
+# Level-frame
+totalHeight = len(levelFileNames)*0.3
+levelframe = DirectScrolledFrame(
+    canvasSize = (-1.2,1.2,-0.2,totalHeight),
+    frameSize = (-1.2,1.2,-0.2,1.5),
+    frameColor = (0,0,0,0.1),
+    scrollBarWidth = 0
+)
+
+levelframe.setPos(0,0,-0.75)
+levelframe.reparentTo(select)
+
+# Manually scrolls the frame by movements of the scroll wheel.
+def scroll(amount):
+    levelframe.verticalScroll['value'] += amount
+
+base.accept('wheel_up',scroll,[-0.2])
+base.accept('wheel_down',scroll,[0.2])
+
+# Levels
+for i in levelFileNames:
+    b = levelButton(i,0,totalHeight)
+    b.reparentTo(levelframe.getCanvas())
+
+''' SETTINGS '''
+def toggleSound(state):
+    if state:
+        base.enableAllAudio()
+    else:
+        base.disableAllAudio()
+
+def toggleShadows(state):
+    if state:
+        runLevel.mainLight.node().setShadowCaster(True,4096,4096)
+    else:
+        runLevel.mainLight.node().setShadowCaster(False)
+
+def toggleDebug(state):
+    if state:
+        runLevel.debugNP.show()
+    else:
+        runLevel.debugNP.hide()
+
+# Background Image
+image = backgroundImage('ui/rockGreyBackground.png')
+image.reparentTo(settings)
+
+# Back button
+backButton = button('<back',0.8,loadStart,x=-1.3)
+backButton.reparentTo(settings)
+
+largeText('settings',1).reparentTo(settings)
+
+toggleButton('sound',toggleSound,-0.25).reparentTo(settings)
+toggleButton('shadows',toggleShadows,-0.40).reparentTo(settings)
+toggleButton('debug mode',toggleDebug,-0.55,default=0).reparentTo(settings)
+
+start.detachNode()
+select.detachNode()
+settings.detachNode()
+
+if __name__ == '__main__':
+    loadStart()
+    base.run()
