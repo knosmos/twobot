@@ -481,7 +481,7 @@ class player():
             NodePath(self.backNode).setZ(-0.5)
 
         #self.camNode = render.attachNewNode('camNode')
-        self.node.setGravity(Vec3(0,0,-30))
+        self.node.setGravity(Vec3(0,0,-40))
     
     def setStatic(self):
         # Set boxes to static when walking on them
@@ -602,6 +602,7 @@ def makeLevel(name):
 
     del pastPositions
     headingNode.setPos((totalX/totalBlocks,totalY/totalBlocks,totalZ/totalBlocks))
+    mainLight.setPos((totalX/totalBlocks,totalY/totalBlocks,40))
     camera.lookAt(headingNode)
     return level
 
@@ -626,7 +627,6 @@ def isThingTouching(name,ghostnode):
         if i.name == name:
             x,y,_ = NodePath(i).getPos()
             gx,gy,_ = NodePath(ghostnode).getPos(render)
-            #print(x,y,gx,gy)
             if abs(x-gx) < 0.55 and abs(y-gy) < 0.55:
                 return True
     return False
@@ -638,7 +638,7 @@ def keyboardControl():
     speed = Vec3(0, 0, 0)
     omega = 0.0
 
-    v = 0.05
+    v = 0.06
     forward = 1
 
     if isPressed('w'):
