@@ -99,13 +99,13 @@ np = render.attachNewNode(alight)
 render.setLight(np)
 
 mainLight = render.attachNewNode(Spotlight("Spot"))
-mainLight.node().setColor(rgb(255,200,100))
+mainLight.node().setColor(rgb(255,255,200))
 mainLight.node().setScene(render)
 mainLight.node().setShadowCaster(True,4096,4096)
 #mainLight.node().showFrustum()
 mainLight.node().getLens().setFov(40)
 mainLight.setPos(0,0,40)
-mainLight.setHpr(-45,-90,0)
+mainLight.setHpr(-60,-90,0)
 mainLight.node().getLens().setNearFar(10, 100)
 render.setLight(mainLight)
 
@@ -116,9 +116,11 @@ render.setShaderAuto()
 
 '''Models'''
 blockModel = loader.loadModel('models/block/block2.dae')
+blockModel.setColorScale(rgb(100,90,80))
 #blockModel.setColorScale(rgb(39, 40, 34, 0.3))
-blockModel.setColorScale(rgb(80,70,65))
+#blockModel.setColorScale(rgb(80,70,65))
 grassModel = loader.loadModel('models/block/grass2.dae')
+#grassModel.setTexture(loader.loadTexture('models/block/grassTexture3.png'))
 rockModel = loader.loadModel('models/rocks/rock.dae')
 
 '''Classes'''
@@ -161,7 +163,8 @@ class grass(static):
 class rock(static):
     def __init__(self,x,y,z):
         super().__init__(x,y,z,rockModel)
-        self.type = 'rock'  
+        self.type = 'rock'
+        self.model.setH(random.randint(0,360))
 
 class tree(static):
     def __init__(self,x,y,z):
@@ -435,9 +438,9 @@ class player():
         # Setup physics
 
         if short:
-            shape = BulletSphereShape(0.5)
+            shape = BulletSphereShape(0.4)
         else:
-            shape = BulletCapsuleShape(0.5,1,ZUp)
+            shape = BulletCapsuleShape(0.4,1,ZUp)
 
         self.node = BulletRigidBodyNode('player')
         self.node.addShape(shape)
@@ -481,7 +484,7 @@ class player():
             NodePath(self.backNode).setZ(-0.5)
 
         #self.camNode = render.attachNewNode('camNode')
-        self.node.setGravity(Vec3(0,0,-40))
+        #self.node.setGravity(Vec3(0,0,-60))
     
     def setStatic(self):
         # Set boxes to static when walking on them
@@ -503,30 +506,33 @@ class player():
         world.remove(self.node)
         self.nodePath.detachNode()
 
-#TODO FIX THIS
-def buildBox(pos,pastPositions,splitLevelString):
+def buildBox(pos,pastPositions,s):
     if pos in pastPositions:
         return False
     pastPositions.append(pos)
     boxPositions = []
-    for rz in [-1,0,1]:
-        if rz+pos[2] >= 0 and rz+pos[2] < len(splitLevelString):
-            for ry in [-1,0,1]:
-                if ry+pos[1] >= 0 and ry+pos[1] < len(splitLevelString[rz+pos[2]]):
-                    for rx in [-1,0,1]:
-                        if rx+pos[0] >= 0 and rx+pos[0] < len(splitLevelString[rz+pos[2]][ry+pos[1]]):
-                            if [rx,ry,rz] != [0,0,0]:
-                                if splitLevelString[rz+pos[2]][ry+pos[1]][rx+pos[0]] == 'b':
-                                    npos = [rx+pos[0],ry+pos[1],rz+pos[2]]
-                                    if not npos in pastPositions:
-                                        #print(pastPositions)
-                                        #print(npos,str(npos in pastPositions))
-                                        rec = buildBox(npos,pastPositions,splitLevelString)
-                                        boxPositions+=[i for i in rec]
-                                        #pastPositions=rec[1]
+    offsets = [
+        [-1,0,0],[1,0,0],
+        [0,-1,0],[0,1,0],
+        [0,0,-1],[0,0,1]
+    ]
+    for offset in offsets:
+        nx = pos[0]+offset[0]
+        ny = pos[1]+offset[1]
+        nz = pos[2]+offset[2]
+        print(nx,ny,nz)
+        if 0 <= nz < len(s) and \
+        0 <= ny < len(s[nz]) and \
+        0 <= nx < len(s[nz][ny]):
+            print('testing...')
+            if s[nz][ny][nx] == 'b':
+                npos = [nx,ny,nz]
+                if not npos in pastPositions:
+                    next = buildBox(npos,pastPositions,s)
+                    boxPositions += [p for p in next]
     boxPositions.append(pos)
-    pastPositions+=boxPositions
-    #print(boxPositions)
+    print(boxPositions)
+    pastPositions += boxPositions
     return boxPositions
 
 def reset():

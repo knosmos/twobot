@@ -114,18 +114,18 @@ def levelButton(filename,status,height):
     name = ' '.join(filename.split('_')[1:]).split('.')[0]
     backgroundColor = [
         rgb(100,255,100,0.5),
-        rgb(255,255,255,0.5),
+        rgb(255,255,255,0.8),
         rgb(0,0,0,0.5)
     ][status] # 0 = completed, 1 = available, 2 = locked
     return DirectButton(
         text=name,
         text_font=font,
-        #text_align=TextNode.ALeft,
+        text_align=TextNode.ACenter,
         pos=(0,0,height-number*0.3),
-        frameSize=(-5,5,0.7,-0.3),
+        frameSize=(-5,5,0.8,-0.3),
         frameColor=backgroundColor,
         scale=0.2,
-        relief=6,
+        relief=1,
         command=startLevel,
         extraArgs=['levels/'+filename],
         suppressMouse=False,
@@ -247,8 +247,8 @@ def startLevel(name):
     runLevel.level = runLevel.makeLevel(name)
     runLevel.win = False
     runLevel.end = False
-    runLevel.headingNode.setH(45)
-    runLevel.pitchNode.setP(50)
+    runLevel.headingNode.setH(-45)
+    runLevel.pitchNode.setP(30)
     taskMgr.add(runLevel.run,'run')
     taskMgr.add(detectWin,'detectWin')
     topbar.reparentTo(aspect2d)
@@ -263,7 +263,8 @@ def startLevel(name):
 levelFileNames = os.listdir('levels')
 
 # Background Image
-image = backgroundImage('ui/levelSelectScreen.png')
+# image = backgroundImage('ui/levelSelectScreen.png')
+image = backgroundImage('ui/select.jpg')
 image.reparentTo(select)
 
 # Back button
@@ -291,7 +292,7 @@ base.accept('wheel_down',scroll,[0.2])
 
 # Levels
 for i in levelFileNames:
-    b = levelButton(i,0,totalHeight)
+    b = levelButton(i,1,totalHeight)
     b.reparentTo(levelframe.getCanvas())
 
 ''' SETTINGS '''
